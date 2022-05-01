@@ -1,19 +1,18 @@
 import { query as q } from 'faunadb';
 import NextAuth from 'next-auth';
-import Providers from 'next-auth/providers';
+import GithubProvider from "next-auth/providers/github"
 
 import { fauna } from '../../../services/fauna';
 
 export default NextAuth({
   providers: [
-    Providers.GitHub({
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      scope: 'read:user',
+    GithubProvider({
+      clientId: process.env.GITHUB_ID,
+      clientSecret: process.env.GITHUB_SECRET,
     }),
   ],
   callbacks: {
-    async session(session) {
+    async session({ session, user }) {
       try {
         const userActiveSubscription = await fauna.query(
           q.Get(
@@ -25,7 +24,7 @@ export default NextAuth({
                   q.Get(
                     q.Match(
                       q.Index('user_by_email'),
-                      q.Casefold(session.user.email)
+                      q.Casefold(user.email)
                     )
                   )
                 )
@@ -37,7 +36,7 @@ export default NextAuth({
             ])
           )
         )
-  
+
         return {
           ...session,
           activeSubscription: userActiveSubscription
@@ -49,10 +48,8 @@ export default NextAuth({
         };
       }
     },
-    async signIn(user, account, profile) {
-      const { email } = user;
-
-      try{
+    async signIn({ user, account, profile, credentials }) {
+      try {
         await fauna.query(
           q.If(
             q.Not(
@@ -65,7 +62,7 @@ export default NextAuth({
             ),
             q.Create(
               q.Collection('users'),
-              { data: { email } }
+              { data: { email: user.email } }
             ),
             q.Get(
               q.Match(
@@ -74,11 +71,13 @@ export default NextAuth({
               )
             )
           )
-        )
+        ).catch(err => {
+          console.log('FAUNA ERROR', err);
+        })
 
         return true;
       } catch {
-        return false;
+        return true;
       }
 
 
